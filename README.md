@@ -40,8 +40,6 @@ git clone https://github.com/maxxyhc/Gigabyte.git && cd Gigabyte
 uv sync --frozen
 ```
 
-`--frozen` 會完全照 `uv.lock` 安裝，不重新解析依賴。
-
 ### 2. 安裝 llama.cpp
 
 macOS：
@@ -66,7 +64,7 @@ mkdir -p models && curl -L -o models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf \
   https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
 ```
 
-### 4. 建立向量索引（CPU，約 10 秒）
+### 4. 建立向量索引
 
 ```bash
 uv run python src/embed.py
@@ -83,9 +81,6 @@ llama-server -m models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf \
   --cache-type-k q8_0 --cache-type-v q8_0 -ngl 99 --jinja
 ```
 
-這些旗標**就是 4GB 預算本身**，理由見〈模型選擇與 VRAM 預算〉。
-
-> Colab 已佔用 8080 埠，在 Colab 上請改用其他埠並以 `--base-url` 傳給下游程式。
 
 ### 6. 提問
 
@@ -103,13 +98,13 @@ uv run python src/rag.py
 
 ### 7. 重現評測
 
-檢索評測（不需要 llama-server，約 30 秒）：
+檢索評測：
 
 ```bash
 uv run python eval/run_eval.py
 ```
 
-生成評測（需要 llama-server，90 次生成，約 3–5 分鐘）：
+生成評測：
 
 ```bash
 uv run python eval/run_gen_eval.py
@@ -159,134 +154,6 @@ uv run python eval/run_gen_eval.py
 - **SSE 解析**：逐行解析 `text/event-stream`，不使用 OpenAI SDK
 
 外部依賴僅四項：`requests`、`beautifulsoup4`、`numpy`、`sentence-transformers`。
-
----
-
-## 資料解析
-
-### 網頁取得
-
-規格頁位於 Akamai 之後，`requests.get` 直接請求會得到 `Access Denied`。
-需要完整的瀏覽器 header 組合（`User-Agent`、`Accept-Language`、`Sec-Ch-Ua`、
-`Sec-Fetch-*`、`Upgrade-Insecure-Requests`）才能通過，缺任一項即失敗。
-頁面本身是 server-rendered，不需要 headless browser。
-
-`fetch.py` 除了檢查 HTTP 狀態碼，另外驗證回應中確實含有
-`desktop-spec-content` 標記——反爬蟲層可能回傳 200 加上一個錯誤頁面，
-只看狀態碼會誤判成功。
-
-原始 HTML 快照已提交至 `data/raw/`，讓解析步驟能離線重現，
-評測時也不會反覆對來源站發送請求。
-
-### 結構化擷取
-
-頁面同時提供行動版與桌面版兩種佈局。**行動版只渲染第一個機型的欄位**，
-桌面版才含完整三欄，因此解析目標是 `div.desktop-spec-content`：
-
-```html
-<div class="spec-column">
-  <div class="multiple-title"><div>顯示晶片</div></div>   <!-- 17 個欄位 -->
-</div>
-<div class="swiper-wrapper">
-  <div class="swiper-slide">                              <!-- 每個機型一欄 -->
-    <div class="spec-item-list" data-spec-row="2">…</div>
-```
-
-共擷取 **17 個欄位**：作業系統、中央處理器、顯示晶片、顯示器、記憶體、儲存裝置、
-鍵盤種類、連接埠、音效、通訊、視訊鏡頭、安全裝置、電池、變壓器、尺寸、重量、顏色。
-
-機型名稱來自頁面副標題，欄位對齊使用 `data-spec-row` 而非陣列位置，
-避免某一欄缺少某列時整排位移。
-
-實作上兩個容易忽略的細節：
-
-- **`<br>` 必須保留為換行。** BeautifulSoup 的 `get_text()` 會直接略過 `<br>`，
-  導致 `16" 16:10OLED WQXGA…` 這種黏行，會同時污染 embedding 與模型讀到的 context。
-- **移除 trademark 符號必須在 NFKC 正規化之前。** NFKC 會把 `™`(U+2122)
-  展開成字母 `TM`，`RTX™ 5090` 變成 `RTXTM 5090`，之後再也濾不掉。
-
----
-
-## Chunking 與檢索設計
-
-### 語料規模決定了設計方向
-
-整份規格僅約 2,400 字元、17 個欄位。這是**精準度問題，不是規模問題**，
-因此刻意避開為大規模設計的技術：不使用向量資料庫（21 個向量，
-一次 `matrix @ query` 即為全部）、不做二次切分、不做 overlap。
-
-### 一個欄位一個 chunk
-
-規格表本身已經是語意完整的切分單位，再切會破壞 key-value 對應。
-每個 chunk 自帶雙語標頭：
-
-```
-[產品] GIGABYTE AORUS MASTER 16 AM6H
-[機型] 全機型 (BZH / BYH / BXH)
-[欄位] 顯示晶片 (Graphics / GPU / 顯卡 / 獨顯 / NVIDIA / RTX / VRAM)
-NVIDIA GeForce RTX 5090 Laptop GPU
-24GB GDDR7
-```
-
-標頭裡的別名表（`data/aliases.json`）是支援中英混合提問的主要機制——
-它把兩種語言的詞彙放進 chunk 本文，使 dense 與 lexical 檢索都能命中。
-評測顯示這是**影響最大的單一設計**（見下）。
-
-### 三個 SKU 的處理
-
-AM6H 有 BZH / BYH / BXH 三種機型，但**只有顯示晶片欄位有差異**，
-其餘 16 個欄位三機型完全相同。
-
-若照機型展開會產生 51 個 chunk，其中大量近似重複——它們會互相瓜分排名，
-並把 `k=3` 全部佔滿，使跨欄位問題取不到第二個欄位。
-
-因此 `parse.py` 對每個相異值只產生一個 chunk，並記錄適用機型；
-對有差異的欄位額外產生一個**比較 chunk**。最終 21 筆：
-
-| 類型 | 數量 | 說明 |
-|---|---|---|
-| `spec` | 16 | 三機型共用 |
-| `sku` | 3 | 顯示晶片，各機型專屬 |
-| `compare` | 1 | 顯示晶片三機型並列 |
-| `derived` | 1 | 規格總覽（各欄位首行） |
-
-`retrieve.py` 據此做**互斥路由**：
-
-- 問題提到機型 → 只給該機型的 chunk，排除比較 chunk
-- 問題未提機型 → 只給比較 chunk，排除各機型專屬 chunk
-
-這解決了一個實際錯誤：未做路由前，「顯卡多強」會回傳三筆中分數最高的一筆
-（差距僅 0.003，實質隨機），使用者會被告知「RTX 5070 Ti」——三張裡最弱的那張，
-且語氣像是唯一答案。
-
-### Hybrid 檢索
-
-Dense（bge-m3 cosine）與 BM25 並用，以 RRF 融合。兩者的失效模式互補：
-
-| 問題 | Dense | BM25 |
-|---|---|---|
-| 「插頭多大顆」 | `spec.adapter` ✅ | 全部 0 分 ❌（語料無此詞） |
-| 「microSD 支援哪個 UHS standard」 | `spec.storage` ❌ | `spec.ports` ✅（3.73 分） |
-
-實作上的三個決定：
-
-**融合用 RRF 而非加權分數相加。** cosine 落在 [0,1]，BM25 無上界且隨語料變動，
-相加需要正規化，而 min-max 正規化在 21 篇文件上極不穩定。RRF 只用名次，天然免疫。
-論文預設 `rrf_k=60` 是為上千篇的排名設計，在 21 篇上會把第 1 名與第 10 名壓得幾乎等價，
-因此本專案取 `rrf_k=10`。
-
-**零分的檢索器不參與投票。** BM25 對「插頭多大顆」給所有 chunk 0 分，
-若讓它照樣排名，任意的 tie-break 順序會蓋過真的找到答案的 dense 檢索器。
-
-**BM25 的 tokenizer 用 character bigram，不用 jieba。** 少一個依賴，
-而且斷詞器會切壞 `AM6H`、`WQXGA`、`Gen4x4` 這類型號字串，而規格問答正是靠這些字串定位。
-
-**IDF 使用 Lucene 變體。** Robertson 原始公式
-`ln((N - df + 0.5) / (df + 0.5))` 在詞出現於超過半數文件時會**變成負值**，
-使包含該詞的文件反而被扣分。在 21 篇文件、character bigram 的條件下這不是邊緣情況——
-實測有 **12 個詞為負**，包含 `am6h`、`byh`、`機型`、`產品`。
-改用 `ln(1 + (N - df + 0.5) / (df + 0.5))` 後為 0 個。
-原始公式保留在 `IDF_FORMULAS` 中，可用 `--idf-formula robertson` 重現此問題。
 
 ---
 
@@ -382,6 +249,19 @@ pid, process_name, used_gpu_memory [MiB]
 
 字串比對前統一正規化（casefold、去空白、去連字號、`×`→`x`），
 且每個事實接受多種表面形式，避免把「24 個核心」判成錯誤答案。
+
+### 受測設定
+
+| 名稱 | 說明 |
+|---|---|
+| dense | bge-m3 向量檢索（cosine，21×1024 numpy 矩陣） |
+| bm25 | 手寫 BM25，character bigram 斷詞，Lucene 版 IDF |
+| hybrid | 上述兩者以 RRF（Reciprocal Rank Fusion）融合排名，`rrf_k=10` |
+| alias | chunk 標頭嵌入該欄位的中英別名（`顯示晶片 (Graphics / GPU / 顯卡 / 獨顯 …)`），供混合語言提問命中 |
+| SKU routing | AM6H 有 BZH / BYH / BXH 三種機型，僅顯示晶片有差異。提問指定機型時只取該機型的 chunk，未指定時改取三機型並列的比較 chunk |
+| overview chunk | 一筆由各欄位首行組成的規格總覽，用於回應籠統提問 |
+
+語料共 21 筆 chunk：16 筆三機型共用、3 筆顯示晶片各機型專屬、1 筆機型比較、1 筆規格總覽。
 
 ### 檢索結果
 
@@ -519,35 +399,3 @@ T4 在兩項指標上皆優於 M2 Pro。
 拒答因此完全交由生成層處理，而該層達成 1.000。
 
 ---
-
-## 專案結構
-
-```
-├── AGENTS.md                     設計決策、硬性限制、程式碼紀律
-├── pyproject.toml / uv.lock      uv 環境
-├── data/
-│   ├── raw/spec_zh.html          原始網頁快照（可重現性基準）
-│   ├── chunks.jsonl              21 筆檢索單元
-│   └── aliases.json              17 欄位的中英別名表
-├── src/                          9 支模組，見〈系統架構〉
-├── eval/
-│   ├── golden_set.jsonl          30 題評測集
-│   ├── run_eval.py               檢索評測
-│   ├── run_gen_eval.py           生成評測
-│   └── results/gen_eval.json     每題的完整答案與計時
-└── notebooks/colab_bench.ipynb   T4 完整重現（含執行輸出）
-```
-
-未進版控者：`models/`（模型檔）、`data/index/`（向量索引）、`.venv/`，
-皆可由上述指令重建。
-
-## 已知限制與後續方向
-
-- **評測集缺少籠統問題**，導致規格總覽 chunk 的效益無法量測。補 2–3 題後重跑即可判定去留。
-- **單欄位題的首位排序仍有 3 題落在第 2–3 名。** 已定位一個可行改進：
-  將出現在全部 21 筆文件中的詞從 BM25 移除（例如產品名 `am6h`），
-  這類詞不具區分能力卻會擾動排名。
-- **僅涵蓋單一機種。** 擴充至產品線時，現行的「一個相異值一個 chunk + 適用機型 metadata」
-  設計可直接沿用，`parse.py` 已依此實作而非針對顯示晶片特例化。
-- **拒答判定可再嚴謹。** 目前為關鍵詞啟發式，改用 LLM-as-judge 可提高一致性，
-  代價是評測本身需要額外的推論成本。
