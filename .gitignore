@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+.DS_Store
+models/
+*.gguf
+*.npy
+.ipynb_checkpoints/
+
+# Rebuildable from chunks.jsonl by embed.py; the .npy files are large and
+# the meta.json is useless without them.
+data/index/

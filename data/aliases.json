@@ -1,0 +1,87 @@
+{
+  "作業系統": {
+    "id": "os",
+    "en": "Operating System",
+    "aliases": ["OS", "系統", "operating system", "Windows"]
+  },
+  "中央處理器": {
+    "id": "cpu",
+    "en": "Processor",
+    "aliases": ["CPU", "處理器", "processor", "chip", "Intel", "Core Ultra", "核心", "時脈"]
+  },
+  "顯示晶片": {
+    "id": "gpu",
+    "en": "Graphics",
+    "aliases": ["GPU", "顯卡", "獨顯", "顯示卡", "graphics", "graphics card", "NVIDIA", "GeForce", "RTX", "VRAM"]
+  },
+  "顯示器": {
+    "id": "display",
+    "en": "Display",
+    "aliases": ["螢幕", "面板", "display", "screen", "panel", "OLED", "解析度", "resolution", "更新率", "refresh rate", "色域", "亮度"]
+  },
+  "記憶體": {
+    "id": "memory",
+    "en": "Memory",
+    "aliases": ["RAM", "memory", "內存", "DDR5", "SO-DIMM", "擴充"]
+  },
+  "儲存裝置": {
+    "id": "storage",
+    "en": "Storage",
+    "aliases": ["SSD", "硬碟", "儲存", "storage", "M.2", "NVMe", "PCIe", "容量", "插槽"]
+  },
+  "鍵盤種類": {
+    "id": "keyboard",
+    "en": "Keyboard",
+    "aliases": ["鍵盤", "keyboard", "背光", "backlight", "RGB"]
+  },
+  "連接埠": {
+    "id": "ports",
+    "en": "I/O Ports",
+    "aliases": ["接口", "插孔", "I/O", "port", "ports", "USB", "HDMI", "Thunderbolt", "Type-C", "RJ-45", "耳機孔", "讀卡機", "外接"]
+  },
+  "音效": {
+    "id": "audio",
+    "en": "Audio",
+    "aliases": ["喇叭", "揚聲器", "audio", "speaker", "sound", "麥克風", "microphone", "DTS"]
+  },
+  "通訊": {
+    "id": "wireless",
+    "en": "Wireless Communication",
+    "aliases": ["網路", "無線", "Wi-Fi", "WiFi", "藍牙", "Bluetooth", "wireless", "network", "LAN", "網卡"]
+  },
+  "視訊鏡頭": {
+    "id": "webcam",
+    "en": "Webcam",
+    "aliases": ["鏡頭", "攝影機", "視訊", "webcam", "camera", "IR", "紅外線"]
+  },
+  "安全裝置": {
+    "id": "security",
+    "en": "Security",
+    "aliases": ["安全", "security", "TPM", "指紋", "fingerprint", "Kensington", "鎖孔"]
+  },
+  "電池": {
+    "id": "battery",
+    "en": "Battery",
+    "aliases": ["battery", "續航", "電量", "Wh", "毫安"]
+  },
+  "變壓器": {
+    "id": "adapter",
+    "en": "AC Adapter",
+    "aliases": ["充電器", "電源供應器", "adapter", "charger", "power supply", "瓦數", "watt"]
+  },
+  "尺寸": {
+    "id": "dimensions",
+    "en": "Dimensions",
+    "aliases": ["大小", "長寬高", "dimensions", "size", "厚度", "thickness"]
+  },
+  "重量": {
+    "id": "weight",
+    "en": "Weight",
+    "aliases": ["weight", "幾公斤", "kg", "公斤", "多重"]
+  },
+  "顏色": {
+    "id": "color",
+    "en": "Color",
+    "aliases": ["color", "colour", "配色", "外觀顏色"]
+  }
+}
