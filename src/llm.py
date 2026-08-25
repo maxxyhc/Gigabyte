@@ -96,7 +96,6 @@ class LlamaClient:
         return Stream(response, started_at)
 
 
-# Command line entry point: stream one prompt and report its timing.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("prompt")

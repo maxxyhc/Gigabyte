@@ -70,7 +70,6 @@ def mean_top_score(retriever: Retriever, questions: list[dict]) -> float:
     return statistics.mean(hits[0].score for hits in results if hits)
 
 
-# Command line entry point: print the retrieval ablation table.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--golden", type=Path, default=GOLDEN_PATH)

@@ -67,7 +67,6 @@ def fetch_html(url: str = SPEC_URL, timeout: float = 20.0) -> str:
     raise RuntimeError(f"failed to fetch {url}") from last_error
 
 
-# Command line entry point: fetch the spec page unless a snapshot exists.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default=SPEC_URL)

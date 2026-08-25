@@ -236,7 +236,6 @@ def build_chunks(html: str, aliases: dict[str, dict], keep_footnotes: bool = Tru
     return chunks
 
 
-# Command line entry point: parse the snapshot into chunks.jsonl.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--in", dest="in_path", type=Path, default=IN_PATH)

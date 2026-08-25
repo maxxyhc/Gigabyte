@@ -99,7 +99,6 @@ def _voted(ranking: list[tuple[int, float]]) -> list[int]:
     return [position for position, score in ranking if score > 0]
 
 
-# Command line entry point: run one query under the given configuration.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("query")

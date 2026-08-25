@@ -36,7 +36,6 @@ def run(rag: Rag, question: str, *, show_sources: bool, max_tokens: int) -> None
         print("sources: " + ", ".join(hit.chunk["id"] for hit in hits))
 
 
-# Command line entry point: one question, or an interactive loop.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("question", nargs="?")

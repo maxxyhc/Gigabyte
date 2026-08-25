@@ -109,7 +109,6 @@ def build(
     return chunks, dense, BM25Index([chunk[variant] for chunk in chunks], **bm25_kwargs)
 
 
-# Command line entry point: inspect the tokenizer, the corpus, or a query.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--query")

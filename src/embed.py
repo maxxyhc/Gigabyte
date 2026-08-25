@@ -106,7 +106,6 @@ def probe(query: str, variant: str, top: int, out_dir: Path = INDEX_DIR) -> None
         print(f"  {rank}. {scores[position]:.4f}  {meta['ids'][position]}")
 
 
-# Command line entry point: build the index, or probe it with --probe.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--chunks", type=Path, default=CHUNKS_PATH)

@@ -105,7 +105,6 @@ def summarise(records: list[dict], questions: dict[str, dict]) -> dict:
     }
 
 
-# Command line entry point: run every configuration and print the table.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--golden", type=Path, default=GOLDEN_PATH)
