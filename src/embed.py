@@ -1,17 +1,3 @@
-"""Build the vector index from chunks.jsonl. CPU-only, offline, run once.
-
-Embeddings deliberately never touch the GPU. The index is 20 vectors built
-once into a .npy file, and at query time only the question is encoded, which
-is imperceptible on CPU. That reserves the entire 4GB VRAM budget for the LLM.
-
-Two variants are always built, so the alias ablation is a config switch in
-retrieve.py rather than an index rebuild:
-
-    emb_text.npy    chunk['text']   — includes the [產品]/[機型]/[欄位] header
-                                      carrying the bilingual aliases
-    emb_value.npy   chunk['value']  — the raw spec value alone
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -27,22 +13,16 @@ INDEX_DIR = ROOT / "data" / "index"
 
 DEFAULT_MODEL = "BAAI/bge-m3"
 
-# Each variant embeds the chunk field of the same name.
 VARIANTS = ("text", "value")
 
-# Query/passage prefixes are model-family specific, and getting them wrong
-# degrades retrieval silently — no error, just worse ranking. E5 requires
-# them, BGE-m3 requires none, the Chinese BGE v1.5 models want an instruction
-# on the query only. Keyed by a substring of the model id; an unlisted model
-# raises rather than defaulting to "no prefix".
 PREFIXES: dict[str, tuple[str, str]] = {
-    # model id substring: (query prefix, passage prefix)
     "bge-m3": ("", ""),
     "e5": ("query: ", "passage: "),
     "bge-small-zh": ("為這個句子生成表示以用於檢索相關文章：", ""),
 }
 
 
+# Return the (query, passage) prefix pair the given model expects.
 def prefixes_for(model_id: str) -> tuple[str, str]:
     for key, pair in PREFIXES.items():
         if key in model_id:
@@ -53,23 +33,22 @@ def prefixes_for(model_id: str) -> tuple[str, str]:
     )
 
 
+# Read chunks.jsonl into a list of dicts.
 def load_chunks(path: Path = CHUNKS_PATH) -> list[dict]:
     with path.open(encoding="utf-8") as handle:
         return [json.loads(line) for line in handle if line.strip()]
 
 
+# Load the sentence-transformers encoder, cached across calls.
 @lru_cache(maxsize=2)
 def get_encoder(model_id: str = DEFAULT_MODEL):
-    # Imported lazily so that `--help` and the pure-numpy consumers of this
-    # module do not pay the multi-second torch import.
     from sentence_transformers import SentenceTransformer
 
     return SentenceTransformer(model_id, device="cpu")
 
 
+# Return L2-normalised float32 embeddings, one row per text.
 def encode(texts: list[str], model_id: str = DEFAULT_MODEL, *, is_query: bool = False) -> np.ndarray:
-    """Return L2-normalised float32 embeddings, one row per text.
-    """
     query_prefix, passage_prefix = prefixes_for(model_id)
     prefix = query_prefix if is_query else passage_prefix
 
@@ -82,6 +61,7 @@ def encode(texts: list[str], model_id: str = DEFAULT_MODEL, *, is_query: bool = 
     return vectors.astype(np.float32)
 
 
+# Encode every chunk into both index variants and write them with a meta file.
 def build(chunks: list[dict], model_id: str = DEFAULT_MODEL, out_dir: Path = INDEX_DIR) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -103,13 +83,8 @@ def build(chunks: list[dict], model_id: str = DEFAULT_MODEL, out_dir: Path = IND
     return meta
 
 
+# Return (embedding matrix, meta), rows aligned to meta['ids'].
 def load_index(variant: str = "text", out_dir: Path = INDEX_DIR) -> tuple[np.ndarray, dict]:
-    """Return (embedding matrix, meta), rows aligned to meta['ids'].
-
-    Callers must encode queries with meta['model']. Mixing an index built by
-    one model with queries encoded by another produces plausible-looking
-    nonsense and no error, so index.py asserts on this.
-    """
     meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
     if variant not in meta["variants"]:
         raise KeyError(f"variant {variant!r} not in index; have {meta['variants']}")
@@ -121,14 +96,8 @@ def load_index(variant: str = "text", out_dir: Path = INDEX_DIR) -> tuple[np.nda
     return vectors, meta
 
 
+# Smoke test: print the nearest chunks to a query.
 def probe(query: str, variant: str, top: int, out_dir: Path = INDEX_DIR) -> None:
-    """Smoke test: print the nearest chunks to a query.
-
-    Run this before writing any retrieval code. If '顯卡多強' does not put a
-    spec.gpu.* chunk first, the problem is the model or the prefix convention,
-    not the ranking logic — and debugging it later through the full pipeline
-    is far more expensive.
-    """
     vectors, meta = load_index(variant, out_dir)
     scores = vectors @ encode([query], meta["model"], is_query=True)[0]
 
@@ -137,6 +106,7 @@ def probe(query: str, variant: str, top: int, out_dir: Path = INDEX_DIR) -> None
         print(f"  {rank}. {scores[position]:.4f}  {meta['ids'][position]}")
 
 
+# Command line entry point: build the index, or probe it with --probe.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--chunks", type=Path, default=CHUNKS_PATH)

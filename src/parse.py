@@ -17,16 +17,12 @@ OUT_PATH = ROOT / "data" / "chunks.jsonl"
 PRODUCT = "GIGABYTE AORUS MASTER 16 AM6H"
 SOURCE_URL = "https://www.gigabyte.com/tw/Laptop/AORUS-MASTER-16-AM6H/sp"
 
-#total 17 cols on website
 EXPECTED_FIELDS = 17
 TRADEMARK_CHARS = "®™©"
 
 
 FOOTNOTE_SELECTOR = "p[style*='font-size:80%']"
 
-# Block-level tags whose content must start on its own line once the markup
-# is flattened to text. Only <p> footnotes occur today; <div> is kept because
-# a nested wrapper would otherwise weld two lines together silently.
 BLOCK_TAGS = ("p", "div")
 
 
@@ -37,29 +33,28 @@ ROW_SELECTOR = "div.spec-item-list[data-spec-row]"
 MODEL_NAME_SELECTOR = ".model-base-info-subtitle"
 
 
+# Read the field alias table.
 def load_aliases(path: Path = ALIAS_PATH) -> dict[str, dict]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+# 'AORUS MASTER 16 BZH' -> 'BZH'.
 def model_code(name: str) -> str:
-    """'AORUS MASTER 16 BZH' -> 'BZH'."""
     return name.split()[-1]
 
 
+# Model names in the same order as the comparison table's columns.
 def extract_models(soup: BeautifulSoup) -> list[str]:
-    """Model names in the same order as the comparison table's columns.
-    """
     subtitle = soup.select_one(MODEL_NAME_SELECTOR)
     if subtitle is None:
         return []
     return [part.strip() for part in subtitle.get_text(strip=True).split("/") if part.strip()]
 
 
+# Return (model names, ordered [(field, {model: value_node})]).
 def extract(
     html: str, keep_footnotes: bool = True
 ) -> tuple[list[str], list[tuple[str, dict[str, Tag]]]]:
-    """Return (model names, ordered [(field, {model: value_node})]).
-    """
     soup = BeautifulSoup(html, "html.parser")
 
     root = soup.select_one(SPEC_ROOT)
@@ -90,9 +85,8 @@ def extract(
     return models, [(fields[i], by_row[i]) for i in sorted(by_row)]
 
 
+# Flatten a value node to clean multi-line plain text.
 def normalize(node: Tag) -> str:
-    """Flatten a value node to clean multi-line plain text.
-    """
     for br in node.find_all("br"):
         br.replace_with("\n")
 
@@ -100,7 +94,6 @@ def normalize(node: Tag) -> str:
         block.insert_before("\n")
 
     text = node.get_text()
-    #remove trademark symbols
     text = text.translate({ord(c): None for c in TRADEMARK_CHARS})
     text = unicodedata.normalize("NFKC", text)
 
@@ -108,18 +101,16 @@ def normalize(node: Tag) -> str:
     return "\n".join(line for line in lines if line)
 
 
+# Collapse models that share a value, preserving first-seen order.
 def merge_identical(per_model: dict[str, str]) -> list[tuple[str, list[str]]]:
-    """Collapse models that share a value, preserving first-seen order.
-    """
     groups: dict[str, list[str]] = {}
     for model, value in per_model.items():
         groups.setdefault(value, []).append(model)
     return list(groups.items())
 
 
+# Build one retrieval chunk.
 def to_chunk(field: str, value: str, models: list[str], all_models: list[str], meta: dict) -> dict:
-    """Build one retrieval chunk.
-    """
     codes = [model_code(m) for m in models]
     shared = set(models) == set(all_models)
 
@@ -130,9 +121,6 @@ def to_chunk(field: str, value: str, models: list[str], all_models: list[str], m
         chunk_id = f"spec.{meta['id']}." + "-".join(code.lower() for code in codes)
         model_line = f"[機型] {' / '.join(models)}"
 
-    # The aliases are baked into the header line and deliberately not kept as
-    # a separate chunk field: aliases.json is their source of truth, and a copy
-    # on every chunk would be one more place to drift.
     labels = " / ".join([meta["en"], *meta["aliases"]])
     text = "\n".join(
         [
@@ -157,16 +145,8 @@ def to_chunk(field: str, value: str, models: list[str], all_models: list[str], m
     }
 
 
+# One chunk holding every SKU's value for a field that varies.
 def to_compare_chunk(field: str, values: dict[str, str], all_models: list[str], meta: dict) -> dict:
-    """One chunk holding every SKU's value for a field that varies.
-
-    Without it, a question that names no SKU has to pick among near-identical
-    per-SKU chunks that score within 0.004 of each other — an arbitrary choice
-    presented to the reader as the answer. Here the model sees all three and
-    can say the laptop ships in three versions. Models are listed in the page's
-    own column order; no performance ranking is asserted, since the spec page
-    states none.
-    """
     body = "\n".join(f"[{model_code(m)}]\n{values[m]}" for m in all_models)
     labels = " / ".join([meta["en"], *meta["aliases"]])
     codes = [model_code(m) for m in all_models]
@@ -192,9 +172,8 @@ def to_compare_chunk(field: str, values: dict[str, str], all_models: list[str], 
     }
 
 
+# A digest chunk: every field with the head of its value.
 def build_overview(merged: list[tuple], all_models: list[str]) -> dict:
-    """A digest chunk: every field with the head of its value.
-    """
     lines: list[str] = []
     for field, meta, _values, groups in merged:
         if len(groups) == 1:
@@ -226,6 +205,7 @@ def build_overview(merged: list[tuple], all_models: list[str]) -> dict:
     }
 
 
+# Turn the raw HTML into the full list of retrieval chunks.
 def build_chunks(html: str, aliases: dict[str, dict], keep_footnotes: bool = True) -> list[dict]:
     models, pairs = extract(html, keep_footnotes=keep_footnotes)
 
@@ -256,6 +236,7 @@ def build_chunks(html: str, aliases: dict[str, dict], keep_footnotes: bool = Tru
     return chunks
 
 
+# Command line entry point: parse the snapshot into chunks.jsonl.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--in", dest="in_path", type=Path, default=IN_PATH)

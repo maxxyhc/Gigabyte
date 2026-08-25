@@ -1,10 +1,3 @@
-"""Fetch the AORUS MASTER 16 AM6H spec page and store a raw snapshot.
-
-This module only fetches and writes. Parsing lives in parse.py, so the parse
-step can be iterated offline against a committed snapshot instead of hitting
-the network on every run.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -17,9 +10,6 @@ import requests
 SPEC_URL = "https://www.gigabyte.com/tw/Laptop/AORUS-MASTER-16-AM6H/sp"
 OUT_PATH = Path(__file__).resolve().parent.parent / "data" / "raw" / "spec_zh.html"
 
-# gigabyte.com sits behind Akamai, which rejects a bare requests.get with
-# "Access Denied". The full browser header set below is what gets through;
-# dropping any of the Sec-* headers is enough to fail again.
 BROWSER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -40,17 +30,14 @@ BROWSER_HEADERS = {
     "Upgrade-Insecure-Requests": "1",
 }
 
-# A 200 response is not proof of success: the anti-bot layer can serve an
-# error page with a 200. Require the markup parse.py actually needs — the
-# desktop comparison table, which is the only layout carrying all three SKUs.
 SENTINEL = "desktop-spec-content"
 
 MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = 2.0
 
 
+# Return the page HTML, retrying on transport errors and bot rejections.
 def fetch_html(url: str = SPEC_URL, timeout: float = 20.0) -> str:
-    """Return the page HTML, retrying on transport errors and bot rejections."""
     last_error: Exception | None = None
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -58,8 +45,6 @@ def fetch_html(url: str = SPEC_URL, timeout: float = 20.0) -> str:
             response = requests.get(url, headers=BROWSER_HEADERS, timeout=timeout)
             response.raise_for_status()
 
-            # requests falls back to ISO-8859-1 for text/* without an explicit
-            # charset, which mangles the Traditional Chinese field names.
             if "charset" not in response.headers.get("content-type", "").lower():
                 response.encoding = response.apparent_encoding
 
@@ -80,6 +65,7 @@ def fetch_html(url: str = SPEC_URL, timeout: float = 20.0) -> str:
     raise RuntimeError(f"failed to fetch {url}") from last_error
 
 
+# Command line entry point: fetch the spec page unless a snapshot exists.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default=SPEC_URL)

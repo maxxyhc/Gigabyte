@@ -1,18 +1,10 @@
-"""Generation evaluation: run the golden set through the full pipeline.
-
-Retrieval is already scored by run_eval.py. This scores what the model does
-with what it retrieved — whether the facts survive into the answer, whether
-unanswerable questions are declined, and whether anything was invented.
-
-The no-RAG row is the point of the table: it shows what the bare 4B model says
-about a laptop that postdates its training data.
-"""
+"""Generation evaluation: run the golden set through the full pipeline."""
 
 from __future__ import annotations
 
 import argparse
 import json
-import re
+import platform
 import statistics
 import sys
 from pathlib import Path
@@ -20,40 +12,34 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from llm import BASE_URL, LlamaClient  # noqa: E402
-from rag_prompt import build_messages, build_plain_messages  # noqa: E402
-from retrieve import Config, Retriever  # noqa: E402
+from llm import BASE_URL, LlamaClient
+from rag_prompt import build_messages, build_plain_messages
+from retrieve import Config, Retriever
 
 GOLDEN_PATH = ROOT / "eval" / "golden_set.jsonl"
 OUT_PATH = ROOT / "eval" / "results" / "gen_eval.json"
 
-# Matching contract from AGENTS.md: compare after casefolding and removing
-# whitespace, hyphens and the multiplication sign, so "USB 3.2 Gen 2" matches
-# the page's "USB3.2 Gen2" and a correct answer is not failed on spacing.
+# Casefold and drop the punctuation that surface forms disagree on.
 def normalise(text: str) -> str:
     return "".join(text.split()).replace("×", "x").replace("-", "").casefold()
 
 
-# A refusal has no fixed wording, so this is a heuristic over the phrasings the
-# prompt actually produces plus common variants. It is reported as a rate, not
-# used as a pass/fail gate on any single answer.
 REFUSAL_MARKERS = [
     "未提供", "沒有提供", "未列出", "沒有列出", "未提及", "無法確認", "無法判斷",
     "does not provide", "not provide", "no information", "not specified",
     "does not state", "not available", "cannot determine",
 ]
 
-# Simplified-only forms that show up in this domain. A targeted probe, not a
-# general converter: it answers whether simplified leakage is frequent enough
-# to justify adding a conversion dependency.
 SIMPLIFIED_CHARS = set("显内网线频处规键认证储装备简传输电视无独声测题设计运转换级别")
 
 
+# Return whether any acceptable surface form appears in the answer.
 def satisfied(answer: str, group: list[str]) -> bool:
     normalised = normalise(answer)
     return any(normalise(form) in normalised for form in group)
 
 
+# Score one answer against its expected facts, refusal and forbidden text.
 def grade(question: dict, answer: str) -> dict:
     groups = question["answer_contains"]
     hits = [satisfied(answer, group) for group in groups]
@@ -68,10 +54,7 @@ def grade(question: dict, answer: str) -> dict:
     }
 
 
-def collect(text_stream) -> str:
-    return "".join(text_stream)
-
-
+# Generate an answer for every question under one configuration.
 def run_config(label: str, questions: list[dict], retriever: Retriever | None, client: LlamaClient) -> list[dict]:
     records = []
     for number, question in enumerate(questions, start=1):
@@ -83,11 +66,8 @@ def run_config(label: str, questions: list[dict], retriever: Retriever | None, c
             messages = build_messages(question["question"], hits)
             sources = [hit.chunk["id"] for hit in hits]
 
-        # Greedy decoding, stated explicitly rather than inherited from the
-        # client default: a benchmark whose numbers move between runs cannot
-        # tell a real change from sampling noise.
         stream = client.stream(messages, temperature=0.0, max_tokens=320)
-        answer = collect(stream)
+        answer = "".join(stream)
         record = {
             "config": label,
             "id": question["id"],
@@ -106,6 +86,7 @@ def run_config(label: str, questions: list[dict], retriever: Retriever | None, c
     return records
 
 
+# Aggregate one configuration's records into the table row.
 def summarise(records: list[dict], questions: dict[str, dict]) -> dict:
     answerable = [r for r in records if questions[r["id"]]["gold"]]
     unanswerable = [r for r in records if not questions[r["id"]]["gold"]]
@@ -124,6 +105,7 @@ def summarise(records: list[dict], questions: dict[str, dict]) -> dict:
     }
 
 
+# Command line entry point: run every configuration and print the table.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--golden", type=Path, default=GOLDEN_PATH)
@@ -168,7 +150,15 @@ def main() -> None:
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(
-        json.dumps({"summary": rows, "records": all_records}, ensure_ascii=False, indent=2),
+        json.dumps(
+            {
+                "environment": {"platform": platform.platform(), "machine": platform.machine()},
+                "summary": rows,
+                "records": all_records,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
     print(f"\nwrote {args.out}")

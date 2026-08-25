@@ -10,3 +10,6 @@ models/
 # Rebuildable from chunks.jsonl by embed.py; the .npy files are large and
 # the meta.json is useless without them.
 data/index/
+
+# Local design notes, not part of the deliverable.
+AGENTS.md

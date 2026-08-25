@@ -1,18 +1,3 @@
-"""Prompt construction for the answering step.
-
-Kept apart from rag.py so the wording can be revised — and ablated — without
-touching the pipeline that calls it.
-
-Answers carry no inline source labels. Attribution lives in the retrieved chunk
-ids, which rag.py prints with --sources; putting it in the prose made a 4B model
-consolidate the labels into one trailing tag and pick the wrong field for it.
-
-The context is rebuilt from the chunk's fields rather than reusing chunk['text']
-verbatim. That text carries the alias header, up to eleven synonyms per field,
-which exists to be matched by the retrievers and would only spend context
-tokens and invite the model to echo them back.
-"""
-
 from __future__ import annotations
 
 SYSTEM = """你是 GIGABYTE AORUS MASTER 16 AM6H 的規格查詢助理。
@@ -33,13 +18,11 @@ Q: What graphics card does it use?
 A: The graphics card depends on the model. The BZH ships with an NVIDIA GeForce RTX 5090 Laptop GPU and 24GB of GDDR7, while the BXH uses an RTX 5070 Ti Laptop GPU with 12GB of GDDR7."""
 
 
-# The no-RAG baseline for the evaluation. It withholds the spec context and
-# the grounding rules, so what it measures is what the bare 4B model believes
-# about a laptop announced after its training data — the reason RAG is here.
 PLAIN_SYSTEM = """你是筆電產品助理，回答使用者關於 GIGABYTE AORUS MASTER 16 AM6H 的問題。
 問題以英文提出時整段回答使用英文，其餘一律使用臺灣繁體中文用字。"""
 
 
+# Build the no-RAG baseline messages, without spec context.
 def build_plain_messages(question: str) -> list[dict]:
     return [
         {"role": "system", "content": PLAIN_SYSTEM},
@@ -47,6 +30,7 @@ def build_plain_messages(question: str) -> list[dict]:
     ]
 
 
+# Render the retrieved chunks as the 參考資料 block.
 def format_context(hits) -> str:
     blocks = []
     for number, hit in enumerate(hits, start=1):
@@ -59,11 +43,9 @@ def format_context(hits) -> str:
     return "\n\n".join(blocks)
 
 
+# Build the system and user messages for one grounded answer.
 def build_messages(question: str, hits) -> list[dict]:
     if not hits:
-        # An empty context still goes to the model rather than short-circuiting
-        # to a canned line: rule 1 already covers it, and one refusal path is
-        # easier to evaluate than two.
         context = "（沒有找到相關資料）"
     else:
         context = format_context(hits)

@@ -1,14 +1,3 @@
-"""The two retrievers: dense vectors and a hand-written BM25.
-
-Both expose the same `rank(query)`, returning *every* chunk as
-(position, score) sorted best-first. Full rankings rather than a top-n
-because retrieve.py fuses with RRF, which needs each retriever's rank for a
-document. With 20 chunks the full sort is free.
-
-Positions index into the chunk list, so both retrievers must be built from
-the same chunks.jsonl in the same order — build() asserts that.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -23,28 +12,16 @@ from embed import CHUNKS_PATH, INDEX_DIR, encode, load_chunks, load_index
 
 CJK = "一-鿿㐀-䶿"
 
-# Latin runs keep internal dots so version-like strings survive whole
-# ("usb3.2", "802.11be"); CJK runs are captured whole and split into bigrams.
 TOKEN_RE = re.compile(rf"[a-z0-9]+(?:\.[a-z0-9]+)*|[{CJK}]+")
 
-# Robertson's original IDF goes negative once a term appears in more than about
-# half the documents, so a document containing it is *penalised*. On 20 docs
-# indexed by character bigrams that is not an edge case: 12 terms go negative
-# here, including am6h, byh, 機型 and 產品. Lucene's variant adds 1 inside the
-# log and stays positive. The broken formula is kept so the README can show it.
 IDF_FORMULAS = {
     "lucene": lambda n, df: math.log(1 + (n - df + 0.5) / (df + 0.5)),
     "robertson": lambda n, df: math.log((n - df + 0.5) / (df + 0.5)),
 }
 
 
+# Lowercased Latin words plus CJK character bigrams.
 def tokenize(text: str) -> list[str]:
-    """Lowercased Latin words plus CJK character bigrams.
-
-    Bigrams instead of a word segmenter (jieba): one dependency fewer, and a
-    segmenter mangles the model strings this corpus is full of — AM6H, WQXGA,
-    Gen4x4 — which are exactly the terms a spec question hinges on.
-    """
     tokens: list[str] = []
 
     for match in TOKEN_RE.findall(text.lower().replace("×", "x")):
@@ -58,9 +35,9 @@ def tokenize(text: str) -> list[str]:
     return tokens
 
 
+# Okapi BM25 over the chunk corpus. Pure Python, no dependencies.
 class BM25Index:
-    """Okapi BM25 over the chunk corpus. Pure Python, no dependencies."""
-
+    # Precompute term frequencies, document lengths and IDF for the corpus.
     def __init__(
         self,
         docs: list[str],
@@ -81,6 +58,7 @@ class BM25Index:
         formula = IDF_FORMULAS[idf_formula]
         self.idf = {term: formula(len(docs), count) for term, count in df.items()}
 
+    # Score every chunk against the query, best first.
     def rank(self, query: str) -> list[tuple[int, float]]:
         scores = np.zeros(len(self.term_freqs), dtype=np.float32)
 
@@ -98,33 +76,30 @@ class BM25Index:
         return _sorted(scores)
 
 
+# Cosine similarity over the pre-built embedding matrix.
 class DenseIndex:
-    """Cosine similarity over the pre-built embedding matrix.
-
-    Twenty 1024-dim vectors: `matrix @ query` is the entire search.
-    """
-
+    # Load the embedding matrix and its meta for one index variant.
     def __init__(self, variant: str = "text", index_dir: Path = INDEX_DIR) -> None:
         self.vectors, self.meta = load_index(variant, index_dir)
 
+    # Score every chunk by cosine similarity to the query, best first.
     def rank(self, query: str) -> list[tuple[int, float]]:
-        # Encoded with meta['model'], never a default: an index built by one
-        # model and queried by another returns plausible nonsense silently.
         query_vector = encode([query], self.meta["model"], is_query=True)[0]
         return _sorted(self.vectors @ query_vector)
 
 
+# Return (position, score) pairs ordered best first.
 def _sorted(scores: np.ndarray) -> list[tuple[int, float]]:
     return [(int(i), float(scores[i])) for i in np.argsort(-scores)]
 
 
+# Load the chunks and both retrievers, aligned on position.
 def build(
     variant: str = "text",
     chunks_path: Path = CHUNKS_PATH,
     index_dir: Path = INDEX_DIR,
     **bm25_kwargs,
 ) -> tuple[list[dict], DenseIndex, BM25Index]:
-    """Load the chunks and both retrievers, aligned on position."""
     chunks = load_chunks(chunks_path)
     dense = DenseIndex(variant, index_dir)
 
@@ -134,6 +109,7 @@ def build(
     return chunks, dense, BM25Index([chunk[variant] for chunk in chunks], **bm25_kwargs)
 
 
+# Command line entry point: inspect the tokenizer, the corpus, or a query.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--query")

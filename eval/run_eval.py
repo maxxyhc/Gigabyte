@@ -1,10 +1,4 @@
-"""Retrieval-only evaluation: score every Config against the golden set.
-
-No LLM involved. The gold chunks for each question are known, so Recall, Hit
-and MRR are fully automatic — the payoff for a corpus small enough to have
-stable chunk ids. This is the loop to iterate retrieval in: a full sweep runs
-in seconds, where the same sweep with generation would take minutes.
-"""
+"""Retrieval-only evaluation: score every Config against the golden set."""
 
 from __future__ import annotations
 
@@ -17,15 +11,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from embed import get_encoder  # noqa: E402
-from retrieve import Config, Retriever  # noqa: E402
+from embed import get_encoder
+from retrieve import Config, Retriever
 
 GOLDEN_PATH = ROOT / "eval" / "golden_set.jsonl"
 
 BEST = Config()
 
-# Rows of the ablation table: two single-retriever baselines, the alias
-# ablation pair, then BEST with one mechanism removed at a time.
 ABLATIONS = [
     ("dense only, alias", Config(bm25=False)),
     ("bm25 only, alias", Config(dense=False)),
@@ -38,30 +30,19 @@ ABLATIONS = [
 TYPES = ("single_field", "cross_field", "model_diff")
 
 
+# Read the golden set.
 def load_golden(path: Path = GOLDEN_PATH) -> list[dict]:
     with path.open(encoding="utf-8") as handle:
         return [json.loads(line) for line in handle if line.strip()]
 
 
+# The highest R@1 this question set can reach.
 def r1_ceiling(questions: list[dict]) -> float:
-    """The highest R@1 this question set can reach.
-
-    Rank 1 holds one chunk, so a question needing |gold| of them caps at
-    1/|gold|. Any set containing multi-gold questions therefore has a ceiling
-    below 1.0 — compare R@1 against this, never against 1.0, and never across
-    question types whose gold counts differ.
-    """
     return statistics.mean(1 / len(q["gold"]) for q in questions)
 
 
+# Retrieval metrics over a set of answerable questions.
 def score(retriever: Retriever, questions: list[dict]) -> dict:
-    """Retrieval metrics over a set of answerable questions.
-
-    Recall is the strict form — the fraction of a question's gold chunks that
-    were retrieved — so three gold chunks with two hits scores 0.67, not 1.0.
-    Hit@k is the lenient companion; the gap between them shows whether k is
-    starving multi-chunk questions.
-    """
     recall1, recall3, hit3, reciprocal = [], [], [], []
 
     for question in questions:
@@ -83,11 +64,13 @@ def score(retriever: Retriever, questions: list[dict]) -> dict:
     }
 
 
+# Mean top-1 fusion score over a set of questions.
 def mean_top_score(retriever: Retriever, questions: list[dict]) -> float:
     results = [retriever.search(q["question"]) for q in questions]
     return statistics.mean(hits[0].score for hits in results if hits)
 
 
+# Command line entry point: print the retrieval ablation table.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--golden", type=Path, default=GOLDEN_PATH)
@@ -104,9 +87,6 @@ def main() -> None:
         f"{len(alias_subset)} alias-dependent\n"
     )
 
-    # The sentence-transformers encoder loads on its first call and prints a
-    # progress bar while doing so. Loading it here keeps that output above the
-    # table instead of through the middle of it.
     get_encoder(Retriever(BEST).dense.meta["model"])
 
     header = f"{'configuration':<24}{'R@1':>7}{'R@3':>7}{'Hit@3':>7}{'MRR':>7}   {'alias R@1':>9}"
