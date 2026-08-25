@@ -5,7 +5,7 @@ import sys
 import time
 from pathlib import Path
 
-import requests
+import httpx
 
 SPEC_URL = "https://www.gigabyte.com/tw/Laptop/AORUS-MASTER-16-AM6H/sp"
 OUT_PATH = Path(__file__).resolve().parent.parent / "data" / "raw" / "spec_zh.html"
@@ -32,6 +32,8 @@ BROWSER_HEADERS = {
 
 SENTINEL = "desktop-spec-content"
 
+HTTP2 = True
+
 MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = 2.0
 
@@ -40,27 +42,27 @@ BACKOFF_SECONDS = 2.0
 def fetch_html(url: str = SPEC_URL, timeout: float = 20.0) -> str:
     last_error: Exception | None = None
 
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        try:
-            response = requests.get(url, headers=BROWSER_HEADERS, timeout=timeout)
-            response.raise_for_status()
+    with httpx.Client(
+        http2=HTTP2, headers=BROWSER_HEADERS, timeout=timeout, follow_redirects=True
+    ) as client:
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            try:
+                response = client.get(url)
+                response.raise_for_status()
 
-            if "charset" not in response.headers.get("content-type", "").lower():
-                response.encoding = response.apparent_encoding
+                html = response.text
+                if SENTINEL not in html:
+                    raise ValueError(
+                        f"response did not contain {SENTINEL!r} "
+                        f"({len(html)} chars) — likely an anti-bot page"
+                    )
+                return html
 
-            html = response.text
-            if SENTINEL not in html:
-                raise ValueError(
-                    f"response did not contain {SENTINEL!r} "
-                    f"({len(html)} chars) — likely an anti-bot page"
-                )
-            return html
-
-        except (requests.RequestException, ValueError) as error:
-            last_error = error
-            print(f"attempt {attempt}/{MAX_ATTEMPTS} failed: {error}", file=sys.stderr)
-            if attempt < MAX_ATTEMPTS:
-                time.sleep(BACKOFF_SECONDS * attempt)
+            except (httpx.HTTPError, ValueError) as error:
+                last_error = error
+                print(f"attempt {attempt}/{MAX_ATTEMPTS} failed: {error}", file=sys.stderr)
+                if attempt < MAX_ATTEMPTS:
+                    time.sleep(BACKOFF_SECONDS * attempt)
 
     raise RuntimeError(f"failed to fetch {url}") from last_error
 

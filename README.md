@@ -150,7 +150,11 @@ uv run python eval/run_gen_eval.py
 - **RRF 融合**：只用兩個檢索器的名次，不用分數
 - **SSE 解析**：逐行解析 `text/event-stream`，含 UTF-8 解碼與 usage 擷取
 
-外部依賴僅四項：`requests`、`beautifulsoup4`、`numpy`、`sentence-transformers`。
+外部依賴五項：`httpx[http2]`（抓網頁）、`beautifulsoup4`（解析 HTML）、`numpy`（矩陣運算）、
+`sentence-transformers`（產生向量）、`requests`（SSE 串流）。
+
+抓網頁必須用 `httpx` 而非 `requests`：規格頁在 Akamai 之後，會拒絕「自稱 Chrome 卻以
+HTTP/1.1 連線」的請求。同一組標頭下 `requests` 得到 403，`httpx` 開 HTTP/2 得到 200。
 
 ---
 
